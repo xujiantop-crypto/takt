@@ -1,0 +1,65 @@
+name: OSS no-tools validation
+on:
+  push:
+    branches: [test/claude-headless-no-tools-validation-20261003]
+permissions:
+  contents: read
+concurrency:
+  group: oss-no-tools-validation
+  cancel-in-progress: true
+env:
+  CI: true
+  TAKT_E2E_PROVIDER: mock
+  TAKT_AUTO_PR: false
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run lint
+      - run: npm test -- --maxWorkers=2
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:it -- --maxWorkers=2
+      - run: npm test -- src/__tests__/releaseVerificationWiring.test.ts
+      - run: npm test -- src/__tests__/report-phase-retry.test.ts
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Install the SDK-matched local mock probe runtime
+        run: |
+          opencode_dir="$RUNNER_TEMP/takt-opencode"
+          npm install --prefix "$opencode_dir" --no-save --package-lock=false --ignore-scripts --no-audit --no-fund opencode-linux-x64@1.18.28
+          printf '%s\n' "$opencode_dir/node_modules/opencode-linux-x64/bin" >> "$GITHUB_PATH"
+      - run: npm run test:opencode-probe
+      - run: npm run test:e2e:smoke
