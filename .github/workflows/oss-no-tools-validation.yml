@@ -12,12 +12,14 @@ env:
   TAKT_E2E_PROVIDER: mock
   TAKT_AUTO_PR: false
 jobs:
-  unit:
+  probe-fix-gates:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
+          ref: b4dffc72ab235f819a087323b9076b87a62a90f9
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
@@ -27,39 +29,49 @@ jobs:
       - run: npm run build
       - run: npm run lint
       - run: npm test -- --maxWorkers=2
-  integration:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npm run build
       - run: npm run test:it -- --maxWorkers=2
-      - run: npm test -- src/__tests__/releaseVerificationWiring.test.ts
-      - run: npm test -- src/__tests__/report-phase-retry.test.ts
-  smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - name: Install the SDK-matched local mock probe runtime
+      - name: Install SDK-matched runtime for free local mocks
         run: |
-          opencode_dir="$RUNNER_TEMP/takt-opencode"
-          npm install --prefix "$opencode_dir" --no-save --package-lock=false --ignore-scripts --no-audit --no-fund opencode-linux-x64@1.18.28
-          printf '%s\n' "$opencode_dir/node_modules/opencode-linux-x64/bin" >> "$GITHUB_PATH"
+          probe_runtime_dir="$RUNNER_TEMP/takt-opencode"
+          npm install --prefix "$probe_runtime_dir" --no-save --package-lock=false --ignore-scripts --no-audit --no-fund opencode-linux-x64@1.18.28
+          printf '%s\n' "$probe_runtime_dir/node_modules/opencode-linux-x64/bin" >> "$GITHUB_PATH"
       - run: npm run test:opencode-probe
       - run: npm run test:e2e:smoke
+        if: always() && !cancelled()
+  no-tools-baseline-and-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: 09ad33f757e6b48a7e0acbef08105449a0370667
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:e2e:smoke
+      - name: Install SDK-matched runtime for free local mocks
+        run: |
+          probe_runtime_dir="$RUNNER_TEMP/takt-opencode"
+          npm install --prefix "$probe_runtime_dir" --no-save --package-lock=false --ignore-scripts --no-audit --no-fund opencode-linux-x64@1.18.28
+          printf '%s\n' "$probe_runtime_dir/node_modules/opencode-linux-x64/bin" >> "$GITHUB_PATH"
+      - name: Verify unchanged-main recorder reproduces the timeout
+        run: |
+          git diff --exit-code bfc5e852dbdb4ff465b0c01bd95e171558df4cf7 -- tools/opencode-probe package.json package-lock.json
+          probe_workspace_dir=$(mktemp -d)
+          set +e
+          node tools/opencode-probe/sdk-prompt-capture.mjs --cwd "$probe_workspace_dir" --taktPrompt tools/opencode-probe/prompts/round1.txt --needle TAKT > "$RUNNER_TEMP/baseline-prompt.log" 2>&1
+          probe_exit=$?
+          set -e
+          cat "$RUNNER_TEMP/baseline-prompt.log"
+          test "$probe_exit" -ne 0
+          rg -q 'Probe execution phase timed out after 30000ms' "$RUNNER_TEMP/baseline-prompt.log"
+      - name: Validate no-tools with the independent recorder fix
+        run: |
+          git show b4dffc72ab235f819a087323b9076b87a62a90f9:tools/opencode-probe/sdk-prompt-capture.mjs > tools/opencode-probe/sdk-prompt-capture.mjs
+          git diff --name-only
+          npm run test:opencode-probe
