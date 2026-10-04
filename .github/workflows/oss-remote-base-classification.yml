@@ -1,0 +1,30 @@
+name: OSS remote-base isolated test gates
+on:
+  push:
+    branches: [test/remote-base-classification-20261004]
+permissions:
+  contents: read
+jobs:
+  targeted:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CI: true
+      TAKT_E2E_PROVIDER: mock
+      TAKT_AUTO_PR: false
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: 113c1c28bf3716f528a84b750036e67ed24e118d
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Run integration classification by itself as required
+        run: npm test -- src/__tests__/releaseVerificationWiring.test.ts
+      - name: Run new heavy Git integration by itself as required
+        run: npm test -- src/__tests__/it-clone-remote-base.test.ts
+      - run: git diff --exit-code
