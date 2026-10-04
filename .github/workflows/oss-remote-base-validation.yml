@@ -1,0 +1,72 @@
+name: OSS remote-base validation
+on:
+  push:
+    branches: [test/remote-base-validation-20261004]
+permissions:
+  contents: read
+concurrency:
+  group: oss-remote-base-validation-20261004
+  cancel-in-progress: true
+env:
+  CI: true
+  TAKT_E2E_PROVIDER: mock
+  TAKT_AUTO_PR: false
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: 2878636df998ea730c4ae8f41d8df9bf8c7ee40d
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Unchanged-main clone units and integration classification
+        run: npm test -- src/__tests__/clone.test.ts src/__tests__/clone-base-branch.test.ts src/__tests__/releaseVerificationWiring.test.ts
+      - name: Real Git regression is red on unchanged main
+        run: |
+          git show 113c1c28bf3716f528a84b750036e67ed24e118d:src/__tests__/it-clone-remote-base.test.ts > src/__tests__/it-clone-remote-base.test.ts
+          git show 113c1c28bf3716f528a84b750036e67ed24e118d:tsconfig.tests.json > tsconfig.tests.json
+          git diff --exit-code -- src/infra/task/clone.ts scripts
+          set +e
+          npm test -- src/__tests__/it-clone-remote-base.test.ts --reporter=json --outputFile="$RUNNER_TEMP/remote-base-red.json"
+          regression_exit=$?
+          set -e
+          test "$regression_exit" -eq 1
+          node -e 'const fs=require("node:fs");const assert=require("node:assert/strict");const r=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+"/remote-base-red.json","utf8"));assert.equal(r.numFailedTests,2);assert.equal(r.numPassedTests,2);const failures=r.testResults.flatMap(s=>s.assertionResults).filter(t=>t.status==="failed");assert(failures.every(t=>t.failureMessages.join(" ").includes("Git clone failed")));console.log("Confirmed two remote-only failures and two passing local-base fallbacks on unchanged main");'
+  fixed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: 113c1c28bf3716f528a84b750036e67ed24e118d
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run lint
+      - name: New real Git integration and classification gate
+        run: npm test -- src/__tests__/it-clone-remote-base.test.ts src/__tests__/releaseVerificationWiring.test.ts
+      - name: Complete unit gate with bounded parallelism
+        run: npm test -- --maxWorkers=2
+      - run: npm run test:it -- --maxWorkers=2
+      - name: Install SDK-matched runtime for free local mock probes
+        run: |
+          probe_runtime_dir="$RUNNER_TEMP/takt-opencode"
+          npm install --prefix "$probe_runtime_dir" --no-save --package-lock=false --ignore-scripts --no-audit --no-fund opencode-linux-x64@1.18.28
+          printf '%s\n' "$probe_runtime_dir/node_modules/opencode-linux-x64/bin" >> "$GITHUB_PATH"
+      - run: npm run test:opencode-probe
+      - run: npm run test:e2e:smoke
+      - name: Confirm tested source stayed unchanged
+        run: git diff --exit-code
