@@ -39,7 +39,7 @@ jobs:
           regression_exit=$?
           set -e
           test "$regression_exit" -eq 1
-          node -e 'const fs=require("node:fs");const assert=require("node:assert/strict");const r=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+"/remote-base-red.json","utf8"));assert.equal(r.numFailedTests,8);assert.equal(r.numPassedTests,8);const failures=r.testResults.flatMap(s=>s.assertionResults).filter(t=>t.status==="failed");assert(failures.filter(t=>t.fullName.includes("source HEAD URLs")).every(t=>t.failureMessages.join(" ").includes("Git clone failed")));assert.equal(failures.filter(t=>t.failureMessages.join(" ").includes("AssertionError")).length,6);console.log("Confirmed six wrong submodule commits and two source-HEAD URL failures; eight controls pass on previous public head");'
+          node -e 'const fs=require("node:fs");const assert=require("node:assert/strict");const r=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+"/remote-base-red.json","utf8"));assert.equal(r.numFailedTests,10);assert.equal(r.numPassedTests,6);const failures=r.testResults.flatMap(s=>s.assertionResults).filter(t=>t.status==="failed");assert(failures.filter(t=>t.fullName.includes("source HEAD URLs")).every(t=>t.failureMessages.join(" ").includes("Git clone failed")));assert.equal(failures.filter(t=>t.failureMessages.join(" ").includes("AssertionError")).length,8);console.log("Confirmed eight wrong submodule commits and two source-HEAD URL failures; six controls pass on previous public head");'
   fixed:
     runs-on: ubuntu-latest
     timeout-minutes: 35
