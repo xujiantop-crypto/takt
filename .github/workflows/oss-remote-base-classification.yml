@@ -1,7 +1,7 @@
 name: OSS remote-base isolated test gates
 on:
   push:
-    branches: [test/remote-base-classification-20261004]
+    branches: [test/remote-base-classification-previous-20261004]
 permissions:
   contents: read
 jobs:
