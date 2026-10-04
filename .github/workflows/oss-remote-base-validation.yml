@@ -1,11 +1,11 @@
 name: OSS remote-base validation
 on:
   push:
-    branches: [test/remote-base-submodule-validation-20261004]
+    branches: [test/remote-base-active-validation-20261004]
 permissions:
   contents: read
 concurrency:
-  group: oss-remote-base-submodule-validation-20261004
+  group: oss-remote-base-active-validation-20261004
   cancel-in-progress: true
 env:
   CI: true
@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          ref: 113c1c28bf3716f528a84b750036e67ed24e118d
+          ref: 1aa856b003e94bc5bb7c1f3c5dd8f24e91a8e363
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -31,22 +31,22 @@ jobs:
         run: npm test -- src/__tests__/clone.test.ts src/__tests__/clone-base-branch.test.ts
       - name: Real Git submodule regression is red on previous public head
         run: |
-          git show 1aa856b003e94bc5bb7c1f3c5dd8f24e91a8e363:src/__tests__/it-clone-remote-base.test.ts > src/__tests__/it-clone-remote-base.test.ts
-          git show 1aa856b003e94bc5bb7c1f3c5dd8f24e91a8e363:tsconfig.tests.json > tsconfig.tests.json
-          git diff --exit-code -- src/infra/task/clone.ts scripts
+          git show cdbaa86c7bf280243cb3e3cea6fd69fd495dc227:src/__tests__/it-clone-remote-base.test.ts > src/__tests__/it-clone-remote-base.test.ts
+          git show cdbaa86c7bf280243cb3e3cea6fd69fd495dc227:tsconfig.tests.json > tsconfig.tests.json
+          git diff --exit-code -- src/infra/task/clone.ts src/infra/task/clone-exec.ts scripts
           set +e
           npm test -- src/__tests__/it-clone-remote-base.test.ts --reporter=json --outputFile="$RUNNER_TEMP/remote-base-red.json"
           regression_exit=$?
           set -e
           test "$regression_exit" -eq 1
-          node -e 'const fs=require("node:fs");const assert=require("node:assert/strict");const r=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+"/remote-base-red.json","utf8"));assert.equal(r.numFailedTests,10);assert.equal(r.numPassedTests,6);const failures=r.testResults.flatMap(s=>s.assertionResults).filter(t=>t.status==="failed");assert(failures.filter(t=>t.fullName.includes("source HEAD URLs")).every(t=>t.failureMessages.join(" ").includes("Git clone failed")));assert.equal(failures.filter(t=>t.failureMessages.join(" ").includes("AssertionError")).length,8);console.log("Confirmed eight wrong submodule commits and two source-HEAD URL failures; six controls pass on previous public head");'
+          node -e 'const fs=require("node:fs");const assert=require("node:assert/strict");const r=JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP+"/remote-base-red.json","utf8"));assert.equal(r.numFailedTests,2);assert.equal(r.numPassedTests,16);const failures=r.testResults.flatMap(s=>s.assertionResults).filter(t=>t.status==="failed");assert(failures.every(t=>t.fullName.includes("preserves selected paths for subsequent updates without path arguments")));assert(failures.every(t=>t.failureMessages.join(" ").includes("expected true to be false")));console.log("Confirmed two subsequent updates initialize excluded submodules; sixteen controls pass on previous public head");'
   fixed:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          ref: 1aa856b003e94bc5bb7c1f3c5dd8f24e91a8e363
+          ref: cdbaa86c7bf280243cb3e3cea6fd69fd495dc227
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
