@@ -44,8 +44,8 @@ jobs:
               .filter(test => test.status === 'failed');
             assert.equal(failures.length, 2);
             for (const test of failures) {
-              assert.ok(test.failureMessages.some(message => message.includes('reviewedHeadShas')),
-                'Failures must demonstrate missing current-head review coverage');
+              assert.ok(test.failureMessages.some(message => message.includes("AssertionError: expected { headSha: 'head-7'") && message.includes('to deeply equal')),
+                'Failures must be the expected head-status assertion failures');
             }
             console.log('Both regressions failed with the expected missing-head assertions');
           } finally {
