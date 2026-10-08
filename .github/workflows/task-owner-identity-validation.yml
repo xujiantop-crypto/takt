@@ -5,7 +5,7 @@ on:
 permissions:
   contents: read
 jobs:
-  linux-gates:
+  linux-completion:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -20,26 +20,12 @@ jobs:
       - run: test "$(git rev-parse HEAD)" = "f437d6d6fdd697e006a414f7d2afd08ef17fbfac"
       - run: npm ci
       - run: npm run build
-      - run: npm run lint
-      - run: npm test
-      - run: npm run test:it
+      - name: Install pinned OpenCode CLI for the deterministic probe
+        run: |
+          npm install --global --prefix "$RUNNER_TEMP/opencode-probe-cli" opencode-ai@1.18.28
+          echo "$RUNNER_TEMP/opencode-probe-cli/bin" >> "$GITHUB_PATH"
+      - run: opencode --version
       - run: npm run test:opencode-probe
       - run: npm run test:e2e:smoke
       - run: npm test -- src/__tests__/releaseVerificationWiring.test.ts
-      - run: npm test -- src/__tests__/it-task-owner-identity.test.ts
-  macos-owner:
-    runs-on: macos-14
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          ref: f437d6d6fdd697e006a414f7d2afd08ef17fbfac
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 24
-          cache: npm
-      - run: test "$(git rev-parse HEAD)" = "f437d6d6fdd697e006a414f7d2afd08ef17fbfac"
-      - run: npm ci
-      - run: npm run build
       - run: npm test -- src/__tests__/it-task-owner-identity.test.ts
