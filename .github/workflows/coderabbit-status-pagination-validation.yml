@@ -1,0 +1,67 @@
+name: CodeRabbit status pagination validation
+on:
+  push:
+    branches: [test/coderabbit-status-pagination-validation]
+permissions:
+  contents: read
+jobs:
+  required-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ce3d2637c065e0ac5a97fd9cda07c8f6a0f5de63
+          fetch-depth: 3
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+      - run: test "$(git rev-parse HEAD)" = "ce3d2637c065e0ac5a97fd9cda07c8f6a0f5de63"
+      - run: npm ci
+      - name: Verify second-page regressions fail on the unchanged production source
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { execFileSync, spawnSync } from 'node:child_process';
+          const source = 'src/infra/github/pr.ts';
+          const product = readFileSync(source);
+          const reportPath = process.env.RUNNER_TEMP + '/coderabbit-pagination-baseline.json';
+          try {
+            writeFileSync(source, execFileSync('git', ['show', 'b42af975f1ba5bc0d965641eee58080c8ecf6a77:' + source]));
+            const result = spawnSync(process.execPath, [
+              'node_modules/vitest/vitest.mjs', 'run', '--config', 'vitest.config.unit.parallel.ts',
+              'src/__tests__/github-pr.test.ts', '-t',
+              'finds CodeRabbit success on a later combined-status page',
+              '--reporter=json', '--outputFile=' + reportPath,
+            ], { stdio: 'inherit' });
+            assert.equal(result.status, 1, 'Baseline must fail the second-page regression assertions');
+            const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+            assert.equal(report.numFailedTests, 2);
+            const failures = report.testResults.flatMap(file => file.assertionResults)
+              .filter(test => test.status === 'failed');
+            assert.equal(failures.length, 2);
+            for (const test of failures) {
+              assert.ok(test.failureMessages.some(message => message.includes('AssertionError') && message.includes('to deeply equal')),
+                'Failures must be assertion failures, not startup errors');
+            }
+            console.log('Both second-page regressions failed with the expected coverage assertions');
+          } finally {
+            writeFileSync(source, product);
+          }
+          NODE
+      - run: git diff --exit-code
+      - run: npm test -- src/__tests__/github-pr.test.ts
+      - run: npm run build
+      - run: npm run lint
+      - run: npm test
+      - run: npm run test:it
+      - name: Install pinned OpenCode CLI for the deterministic probe
+        run: |
+          npm install --global --prefix "$RUNNER_TEMP/opencode-probe-cli" opencode-ai@1.18.28
+          echo "$RUNNER_TEMP/opencode-probe-cli/bin" >> "$GITHUB_PATH"
+      - run: opencode --version
+      - run: npm run test:opencode-probe
+      - run: npm run test:e2e:smoke
