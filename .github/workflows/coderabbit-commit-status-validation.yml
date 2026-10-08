@@ -1,0 +1,67 @@
+name: CodeRabbit commit status validation
+on:
+  push:
+    branches: [test/coderabbit-commit-status-validation]
+permissions:
+  contents: read
+jobs:
+  required-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: b42af975f1ba5bc0d965641eee58080c8ecf6a77
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+      - run: test "$(git rev-parse HEAD)" = "b42af975f1ba5bc0d965641eee58080c8ecf6a77"
+      - run: npm ci
+      - name: Verify regressions fail on the unchanged production source
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { execFileSync, spawnSync } from 'node:child_process';
+          const source = 'src/infra/github/pr.ts';
+          const product = readFileSync(source);
+          const reportPath = process.env.RUNNER_TEMP + '/coderabbit-baseline.json';
+          try {
+            writeFileSync(source, execFileSync('git', ['show', 'c800a9ec861d23b3074f74657188e0080ec2c1a6:' + source]));
+            const result = spawnSync(process.execPath, [
+              'node_modules/vitest/vitest.mjs', 'run', '--config', 'vitest.config.unit.parallel.ts',
+              'src/__tests__/github-pr.test.ts', '-t',
+              'recognizes successful exact-head|recognizes CodeRabbit commit status',
+              '--reporter=json', '--outputFile=' + reportPath,
+            ], { stdio: 'inherit' });
+            assert.equal(result.status, 1, 'Baseline must fail the new regression assertions');
+            const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+            assert.equal(report.numFailedTests, 2);
+            const failures = report.testResults.flatMap(file => file.assertionResults)
+              .filter(test => test.status === 'failed');
+            assert.equal(failures.length, 2);
+            for (const test of failures) {
+              assert.ok(test.failureMessages.some(message => message.includes('reviewedHeadShas')),
+                'Failures must demonstrate missing current-head review coverage');
+            }
+            console.log('Both regressions failed with the expected missing-head assertions');
+          } finally {
+            writeFileSync(source, product);
+          }
+          NODE
+      - run: git diff --exit-code
+      - run: npm test -- src/__tests__/github-pr.test.ts
+      - run: npm run build
+      - run: npm run lint
+      - run: npm test
+      - run: npm run test:it
+      - name: Install pinned OpenCode CLI for the deterministic probe
+        run: |
+          npm install --global --prefix "$RUNNER_TEMP/opencode-probe-cli" opencode-ai@1.18.28
+          echo "$RUNNER_TEMP/opencode-probe-cli/bin" >> "$GITHUB_PATH"
+      - run: opencode --version
+      - run: npm run test:opencode-probe
+      - run: npm run test:e2e:smoke
