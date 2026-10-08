@@ -5,21 +5,43 @@ on:
 permissions:
   contents: read
 jobs:
-  linux-completion:
+  linux-gates:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          ref: f437d6d6fdd697e006a414f7d2afd08ef17fbfac
+          ref: ced500ddff3e01300c6697fb62488061dc325660
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 24
           cache: npm
-      - run: test "$(git rev-parse HEAD)" = "f437d6d6fdd697e006a414f7d2afd08ef17fbfac"
+      - run: test "$(git rev-parse HEAD)" = "ced500ddff3e01300c6697fb62488061dc325660"
       - run: npm ci
       - run: npm run build
+      - name: Verify the actual Unix inspector with a real child
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { spawn } from 'node:child_process';
+          import { once } from 'node:events';
+          import { getTaskProcessIdentity } from './dist/infra/task/taskProcessIdentity.js';
+          const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore', shell: false });
+          await once(child, 'spawn');
+          const closed = once(child, 'close');
+          try {
+            const identity = getTaskProcessIdentity(child.pid);
+            assert.ok(identity?.startTime, 'Real Unix child birth identity must be available for these validation gates');
+            console.log('Real child birth inspection passed');
+          } finally {
+            child.kill();
+            await closed;
+          }
+          NODE
+      - run: npm run lint
+      - run: npm test
+      - run: npm run test:it
       - name: Install pinned OpenCode CLI for the deterministic probe
         run: |
           npm install --global --prefix "$RUNNER_TEMP/opencode-probe-cli" opencode-ai@1.18.28
@@ -27,5 +49,41 @@ jobs:
       - run: opencode --version
       - run: npm run test:opencode-probe
       - run: npm run test:e2e:smoke
+      - run: npm test -- src/__tests__/releaseVerificationWiring.test.ts
+      - run: npm test -- src/__tests__/it-task-owner-identity.test.ts
+  macos-owner:
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          ref: ced500ddff3e01300c6697fb62488061dc325660
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+      - run: test "$(git rev-parse HEAD)" = "ced500ddff3e01300c6697fb62488061dc325660"
+      - run: npm ci
+      - run: npm run build
+      - name: Verify the actual Unix inspector with a real child
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { spawn } from 'node:child_process';
+          import { once } from 'node:events';
+          import { getTaskProcessIdentity } from './dist/infra/task/taskProcessIdentity.js';
+          const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore', shell: false });
+          await once(child, 'spawn');
+          const closed = once(child, 'close');
+          try {
+            const identity = getTaskProcessIdentity(child.pid);
+            assert.ok(identity?.startTime, 'Real Unix child birth identity must be available for these validation gates');
+            console.log('Real child birth inspection passed');
+          } finally {
+            child.kill();
+            await closed;
+          }
+          NODE
       - run: npm test -- src/__tests__/releaseVerificationWiring.test.ts
       - run: npm test -- src/__tests__/it-task-owner-identity.test.ts
